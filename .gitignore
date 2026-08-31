@@ -174,3 +174,10 @@ cython_debug/
 
 .DS_Store
 
+# Local SQLite database (dev mode; Docker keeps it in a volume)
+backend/data/
+
+# Playwright artifacts
+frontend/test-results/
+frontend/playwright-report/
+

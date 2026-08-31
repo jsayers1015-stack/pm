@@ -15,6 +15,8 @@ export type BoardData = {
   cards: Record<string, Card>;
 };
 
+// Test fixture only. The live board comes from GET /api/board, and the backend
+// seeds new users from backend/app/seed.py, which this must mirror.
 export const initialData: BoardData = {
   columns: [
     { id: "col-backlog", title: "Backlog", cardIds: ["card-1", "card-2"] },
