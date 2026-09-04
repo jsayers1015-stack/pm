@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 
-from app import auth, board, config, db
+from app import auth, board, chat, config, db
 
 health_router = APIRouter(prefix="/api")
 
@@ -34,6 +34,7 @@ app = FastAPI(title="Project Management MVP", lifespan=lifespan)
 app.include_router(health_router)
 app.include_router(auth.router)
 app.include_router(board.router)
+app.include_router(chat.router)
 app.include_router(fallback_router)
 
 app.mount("/", StaticFiles(directory=config.STATIC_DIR, html=True), name="static")

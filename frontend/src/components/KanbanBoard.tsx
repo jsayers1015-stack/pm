@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import clsx from "clsx";
 import {
   DndContext,
   DragOverlay,
@@ -13,6 +14,7 @@ import {
 } from "@dnd-kit/core";
 import { KanbanColumn } from "@/components/KanbanColumn";
 import { KanbanCardPreview } from "@/components/KanbanCardPreview";
+import { ChatSidebar } from "@/components/ChatSidebar";
 import { createId, moveCard, type BoardData } from "@/lib/kanban";
 import { UnauthorizedError, getBoard, saveBoard } from "@/lib/api";
 
@@ -35,6 +37,7 @@ export const KanbanBoard = ({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
+  const [isChatOpen, setIsChatOpen] = useState(false);
   const hasPendingSave = useRef(false);
 
   const sensors = useSensors(
@@ -83,6 +86,18 @@ export const KanbanBoard = ({
 
     return () => clearTimeout(timer);
   }, [board, onUnauthorized]);
+
+  // The AI writes the board server-side, so pull the result rather than sending
+  // it back. setBoard rather than mutate, so this never schedules a save.
+  const handleBoardUpdatedByAi = useCallback(async () => {
+    try {
+      setBoard(await getBoard());
+    } catch (caught) {
+      if (caught instanceof UnauthorizedError) {
+        onUnauthorized();
+      }
+    }
+  }, [onUnauthorized]);
 
   // Applies the change locally straight away, then lets the effect above persist
   // it. The UI never waits for the server.
@@ -190,7 +205,14 @@ export const KanbanBoard = ({
       <div className="pointer-events-none absolute left-0 top-0 h-[420px] w-[420px] -translate-x-1/3 -translate-y-1/3 rounded-full bg-[radial-gradient(circle,_rgba(32,157,215,0.25)_0%,_rgba(32,157,215,0.05)_55%,_transparent_70%)]" />
       <div className="pointer-events-none absolute bottom-0 right-0 h-[520px] w-[520px] translate-x-1/4 translate-y-1/4 rounded-full bg-[radial-gradient(circle,_rgba(117,57,145,0.18)_0%,_rgba(117,57,145,0.05)_55%,_transparent_75%)]" />
 
-      <main className="relative mx-auto flex min-h-screen max-w-[1500px] flex-col gap-10 px-6 pb-16 pt-12">
+      <main
+        className={clsx(
+          "relative mx-auto flex min-h-screen max-w-[1500px] flex-col gap-10 px-6 pb-16 pt-12",
+          // Narrower than lg the sidebar covers the board, so only reserve
+          // space where there is room for both.
+          isChatOpen && "lg:pr-[430px]"
+        )}
+      >
         {saveError && (
           <p
             data-testid="save-error"
@@ -278,6 +300,13 @@ export const KanbanBoard = ({
           </DragOverlay>
         </DndContext>
       </main>
+
+      <ChatSidebar
+        isOpen={isChatOpen}
+        onToggle={() => setIsChatOpen((previous) => !previous)}
+        onBoardUpdated={handleBoardUpdatedByAi}
+        onUnauthorized={onUnauthorized}
+      />
     </div>
   );
 };

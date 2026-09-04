@@ -14,6 +14,8 @@ export default defineConfig({
   expect: {
     timeout: 10_000,
   },
+  // Live tests hit OpenRouter and take around 90 seconds. Opt in with LIVE_AI=1.
+  grepInvert: process.env.LIVE_AI ? undefined : /@live/,
   use: {
     baseURL,
     trace: "retain-on-failure",

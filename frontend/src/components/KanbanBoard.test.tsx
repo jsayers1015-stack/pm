@@ -10,6 +10,7 @@ vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
   getBoard: vi.fn(),
   saveBoard: vi.fn(),
+  sendChat: vi.fn(),
 }));
 
 const mockedApi = vi.mocked(api);
@@ -35,6 +36,7 @@ describe("KanbanBoard", () => {
     vi.resetAllMocks();
     mockedApi.getBoard.mockResolvedValue(structuredClone(initialData));
     mockedApi.saveBoard.mockResolvedValue(undefined);
+    mockedApi.sendChat.mockResolvedValue({ reply: "Sure.", boardUpdated: false });
   });
 
   it("shows a loading state until the board arrives", async () => {
@@ -222,6 +224,37 @@ describe("KanbanBoard", () => {
     );
 
     await waitFor(() => expect(onUnauthorized).toHaveBeenCalledOnce());
+  });
+
+  it("shows the AI board change without a reload and saves nothing back", async () => {
+    await renderBoard();
+    const aiBoard = structuredClone(initialData);
+    aiBoard.cards["card-9"] = {
+      id: "card-9",
+      title: "Book the venue",
+      details: "From the assistant",
+    };
+    aiBoard.columns[0].cardIds.push("card-9");
+    mockedApi.getBoard.mockResolvedValue(aiBoard);
+    mockedApi.sendChat.mockResolvedValue({ reply: "Added it.", boardUpdated: true });
+
+    await userEvent.click(screen.getByTestId("chat-toggle"));
+    await userEvent.type(screen.getByLabelText("Message"), "Add a card{Enter}");
+
+    expect(await screen.findByText("Book the venue")).toBeInTheDocument();
+    // The AI already wrote the board, so pulling it must not trigger a PUT.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(mockedApi.saveBoard).not.toHaveBeenCalled();
+  });
+
+  it("does not refetch the board when the assistant changed nothing", async () => {
+    await renderBoard();
+
+    await userEvent.click(screen.getByTestId("chat-toggle"));
+    await userEvent.type(screen.getByLabelText("Message"), "How many cards?{Enter}");
+
+    await screen.findByTestId("chat-assistant");
+    expect(mockedApi.getBoard).toHaveBeenCalledOnce();
   });
 
   it("reports unauthorized when a save is rejected", async () => {

@@ -33,6 +33,8 @@ frontend/
       KanbanCard.tsx         sortable card, inline edit form, Edit and Remove buttons
       KanbanCardPreview.tsx  non-interactive copy shown in the DragOverlay
       NewCardForm.tsx        collapsed "Add a card" button expanding to a form
+      ChatSidebar.tsx        collapsible AI chat, holds conversation history
+      ChatSidebar.test.tsx
       KanbanBoard.test.tsx
     lib/
       api.ts            fetch wrapper, relative /api paths, credentials included
@@ -41,9 +43,10 @@ frontend/
     test/
       setup.ts, vitest.d.ts
   tests/
-    helpers.ts          signIn, signInWithFreshBoard, waitForBoardSave
+    helpers.ts          signIn, signInWithFreshBoard, waitForBoardSave, mockChat
     auth.spec.ts        Playwright e2e for sign in
     kanban.spec.ts      Playwright e2e for the board
+    chat.spec.ts        Playwright e2e for the sidebar; the live test is tagged @live
 ```
 
 ## Data model
@@ -64,7 +67,19 @@ These types mirror `BoardData` in `backend/app/schemas.py`, which validates ever
 
 `AppShell` is the only entry point. On mount it calls `getMe()`; a 401 renders `LoginForm`, success renders `KanbanBoard` with `username`, `onSignOut` and `onUnauthorized`. Because the app is a static export there is no middleware and no `/login` route, so gating is client-side and the backend enforces auth on every API call.
 
-`lib/api.ts` always uses relative `/api` paths with `credentials: "include"`. In dev the NextJS rewrite makes that same-origin, so the session cookie works without CORS. Board calls throw `UnauthorizedError` on a 401; `KanbanBoard` turns that into `onUnauthorized()`, and `AppShell` clears `username` so the user lands back on the login form. `onUnauthorized` is wrapped in `useCallback` because it sits in the board fetch effect's dependencies.
+`lib/api.ts` always uses relative `/api` paths with `credentials: "include"`. In dev the NextJS rewrite makes that same-origin, so the session cookie works without CORS. Board and chat calls throw `UnauthorizedError` on a 401; `KanbanBoard` turns that into `onUnauthorized()`, and `AppShell` clears `username` so the user lands back on the login form. `onUnauthorized` is wrapped in `useCallback` because it sits in the board fetch effect's dependencies.
+
+`sendChat(message, history)` posts to `/api/chat` and maps `board_updated` to `boardUpdated`. History is whatever the sidebar currently holds, minus the message just being sent.
+
+## Chat
+
+`ChatSidebar` owns the conversation. Open state lives in `KanbanBoard` so the board can reserve `lg:pr-[430px]` when there is room for both. Below `lg` the sidebar covers the board full-width rather than squeezing the columns.
+
+Sending appends the user turn immediately, then POSTs `{message, history}`. A `boardUpdated: true` reply calls `onBoardUpdated`, which `KanbanBoard` handles by `getBoard()` into `setBoard` rather than `mutate`, so the AI write is never PUTted back. The "Board updated" confirmation is stored on that assistant turn so it stays attached as the conversation grows.
+
+The thinking indicator pulses and says board changes can take a minute or two, because a live add-a-card call measured 92 seconds on the free tier. Enter sends, Shift+Enter inserts a newline. Opening the sidebar focuses the input.
+
+A failed request keeps every turn already on screen and shows an inline error. A 401 calls `onUnauthorized` instead.
 
 ## State
 
@@ -92,9 +107,9 @@ A failed save shows a non-blocking banner and refetches, so the UI resyncs to wh
 
 Palette is defined once as CSS variables in `globals.css` and referenced as `text-[var(--navy-dark)]` etc. Do not hardcode hex values in components.
 
-`--accent-yellow: #ecad0a`, `--primary-blue: #209dd7`, `--secondary-purple: #753991`, `--navy-dark: #032147`, `--gray-text: #888888`, plus `--surface`, `--surface-strong`, `--stroke`, `--shadow`.
+`--accent-yellow: #ecad0a`, `--primary-blue: #209dd7`, `--secondary-purple: #753991`, `--navy-dark: #032147`, `--gray-text: #888888`, plus `--surface`, `--surface-strong`, `--stroke`, `--shadow`, `--primary-blue-soft`, `--secondary-purple-soft`.
 
-Fonts are Space Grotesk (display, via the `.font-display` class) and Manrope (body), loaded through `next/font/google` in `layout.tsx`.
+Fonts are Space Grotesk (display, via the `.font-display` class) and Manrope (body), loaded through `next/font/google` in `layout.tsx`. `.thinking` is a slow opacity pulse used by the chat waiting state.
 
 ## Test hooks
 
@@ -112,8 +127,11 @@ Keep these stable; both test suites depend on them.
 - `data-testid="session-loading"` while the session check is in flight
 - `data-testid="board-loading"` while the board fetch is in flight, `data-testid="board-error"` if it fails
 - `data-testid="save-error"` on the non-blocking save failure banner
+- `data-testid="chat-toggle"` on the closed-state Ask AI button, `data-testid="chat-sidebar"` when open
+- `aria-label="Message"` on the chat textarea, `aria-label="Close assistant"` on Close
+- `data-testid="chat-user"` / `data-testid="chat-assistant"` on each turn, `data-testid="chat-thinking"` while waiting, `data-testid="chat-error"` on a failed send, `data-testid="chat-board-updated"` on the confirmation
 
-Scripts: `npm run test:unit`, `npm run test:e2e`, `npm run test:all`.
+Scripts: `npm run test:unit`, `npm run test:e2e`, `npm run test:all`. The e2e live test is tagged `@live` and excluded unless `LIVE_AI=1`.
 
 ## Build modes
 
@@ -122,15 +140,11 @@ Scripts: `npm run test:unit`, `npm run test:e2e`, `npm run test:all`.
 - `BUILD_STATIC=1` gives `output: "export"` plus unoptimized images, producing `out/` for FastAPI to serve. This is what the Dockerfile runs.
 - Unset means `next dev`, where `/api/*` is rewritten to `127.0.0.1:8000`. That keeps the browser same-origin, so session cookies work with no CORS setup.
 
-## Not implemented yet
-
-- AI chat sidebar
-
 ## Gotchas
 
 - `next/font/google` downloads font files at build time, so the Docker build stage needs network access.
 - Card ids are generated client-side by `createId` (`Math.random` plus a timestamp) and the backend stores them as given.
-- e2e tests run against the container on port 8000 and do not start a server themselves, so bring the app up first. Set `BASE_URL` to target `next dev` instead.
+- e2e tests run against the container on port 8000 and do not start a server themselves, so bring the app up first. Set `BASE_URL` to target `next dev` instead. The live chat test is tagged `@live` and skipped unless `LIVE_AI=1`; it needs a 240 second timeout because a board change takes around 90 seconds.
 - e2e runs with `workers: 1`. There is one board for one user, so parallel tests would overwrite each other now that changes persist.
 - Any e2e test that mutates the board must use `signInWithFreshBoard`, and any test that reloads to check persistence must `await waitForBoardSave(page)` first, set up before the action that triggers the save.
 - Unit tests must mock `@/lib/api` with `importOriginal` so the real `UnauthorizedError` class survives; the component checks it with `instanceof`, and a fully automocked class breaks that.

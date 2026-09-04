@@ -10,6 +10,8 @@
   --surface-strong: #ffffff;
   --stroke: rgba(3, 33, 71, 0.08);
   --shadow: 0 18px 40px rgba(3, 33, 71, 0.12);
+  --primary-blue-soft: rgba(32, 157, 215, 0.12);
+  --secondary-purple-soft: rgba(117, 57, 145, 0.08);
 }
 
 @theme inline {
@@ -31,4 +33,18 @@ body {
 
 .font-display {
   font-family: var(--font-display), "Segoe UI", sans-serif;
+}
+
+@keyframes thinking-pulse {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.thinking {
+  animation: thinking-pulse 1.6s ease-in-out infinite;
 }

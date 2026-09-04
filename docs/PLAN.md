@@ -312,25 +312,37 @@ the board between tests. It must stay in sync with `backend/app/seed.py`.
 
 Prove the OpenRouter call works before building anything on top of it.
 
-- [ ] Implement `ai.py` posting to OpenRouter chat completions with `httpx2`, which imports as `httpx2` and exposes `AsyncClient`
-- [ ] Send the `HTTP-Referer` and `X-Title` headers OpenRouter expects
-- [ ] Read the model from `OPENROUTER_MODEL`, defaulting to `nvidia/nemotron-3.5-lightning:free`
-- [ ] Add a script or pytest marker that asks the model "what is 2+2" and prints the reply
-- [ ] Confirm a sane answer comes back from the live API
-- [ ] Handle a missing or rejected API key with a clear error rather than a stack trace
-- [ ] Note the free tier's rate limits in the README
+- [x] Re-check the model on OpenRouter before writing code against it, since free variants get retired. Its only endpoint is up and lists `tools` and `tool_choice` with `supports_tool_choice.function`, but no `response_format` or `structured_outputs`, which confirms the Part 1 finding
+- [x] Implement `ai.py` posting to OpenRouter chat completions with `httpx2`, which imports as `httpx2` and exposes `AsyncClient`
+- [x] Send the `HTTP-Referer` and `X-Title` headers OpenRouter expects
+- [x] Read the model from `OPENROUTER_MODEL`, defaulting to `nvidia/nemotron-3.5-lightning:free`
+- [x] Make `chat_completion` take optional `tools` and `tool_choice` and return the raw message dict, so Part 9 only adds the tool definition and the prompt
+- [x] Add a `live` pytest marker, deselected by default via `addopts = "-m 'not live'"`
+- [x] Add `scripts/test-ai.ps1` and `scripts/test-ai.sh`, the only scripts that pass `.env` into the test container, so the default backend run still needs no key
+- [x] Confirm a sane answer comes back from the live API
+- [x] Handle a missing or rejected API key with a clear error rather than a stack trace. Everything raises `AIError`, including a 200 carrying an error body with no `choices`, which is how OpenRouter reports some upstream provider failures
+- [x] Note the free tier's rate limits in the README
 
 **Tests**
 
-- Live, run manually and excluded from the default suite: the 2+2 call returns a response containing "4"
-- Backend unit with a mocked transport: a normal response is parsed correctly
-- Backend unit: a 401 from OpenRouter raises a clear configuration error
-- Backend unit: a network timeout is surfaced as a clean error
+- [x] Live, run manually and excluded from the default suite: the 2+2 call returns a response containing "4"
+- [x] Live: a forced tool call comes back as a `tool_calls` entry with parseable JSON arguments, pulled forward from Part 9 to de-risk it
+- [x] Backend unit with a mocked transport: a normal response is parsed correctly
+- [x] Backend unit: the request carries the key, the model, and the attribution headers
+- [x] Backend unit: `tools` and `tool_choice` are forwarded, and omitted when not passed
+- [x] Backend unit: a tool call response is returned intact
+- [x] Backend unit: a missing key raises before any network call
+- [x] Backend unit: a 401 from OpenRouter raises a clear configuration error
+- [x] Backend unit: a 429 names the free-tier limits
+- [x] Backend unit: a network timeout is surfaced as a clean error
+- [x] Backend unit: a 200 with no choices is an error rather than a `KeyError`
 
 **Success criteria**
 
-- The live 2+2 call demonstrably returns 4
-- The default test suite passes without network access, because live calls are opt-in
+- [x] The live 2+2 call demonstrably returns 4
+- [x] The live forced tool call demonstrably returns structured arguments, so Part 9's mechanism is proven
+- [x] A genuinely invalid key against the real API produces the `AIError` message, not a raw stack trace
+- [x] The default test suite passes without network access, because live calls are opt-in: 43 passed, 2 deselected
 
 ---
 
@@ -338,80 +350,93 @@ Prove the OpenRouter call works before building anything on top of it.
 
 Every chat call sends the current board plus the question and history. The model replies through a single forced tool call carrying its answer and, optionally, a replacement board.
 
-- [ ] Define one tool, `respond_to_user`, with parameters `reply` (string, required) and `board` (full `BoardData`, optional)
-- [ ] Call OpenRouter with `tools` and `tool_choice` pinned to that tool, so every response is structured
-- [ ] Build a system prompt explaining the board shape and that `board` should be omitted unless a change was requested
-- [ ] Serialize the user's current board into the prompt
-- [ ] Pass conversation history through from the request
-- [ ] Implement `POST /api/chat` returning `{reply, board_updated}`
-- [ ] Validate any returned board against the pydantic models plus the Part 6 integrity rules before writing it
-- [ ] On validation failure, return the reply with `board_updated: false` and leave the stored board untouched
-- [ ] Handle a malformed or absent tool call by falling back to any plain message content
-- [ ] Require a session, so chat is scoped to the signed-in user's board
+- [x] Define one tool, `respond_to_user`, with parameters `reply` (string, required) and `board` (full `BoardData`, optional)
+- [x] Generate the `board` parameter's schema from `BoardData.model_json_schema()` instead of hand-writing it, hoisting `$defs` to the root of `parameters` so the generated `$ref`s resolve. One less copy of the board shape to keep in sync
+- [x] Call OpenRouter with `tools` and `tool_choice` pinned to that tool, so every response is structured
+- [x] Build a system prompt explaining the board shape and that `board` should be omitted unless a change was requested
+- [x] Serialize the user's current board into the prompt
+- [x] Pass conversation history through from the request
+- [x] Implement `POST /api/chat` returning `{reply, board_updated}`
+- [x] Validate any returned board against the pydantic models plus the Part 6 integrity rules before writing it
+- [x] On validation failure, return the reply with `board_updated: false` and leave the stored board untouched
+- [x] Handle a malformed or absent tool call by falling back to any plain message content
+- [x] Map `AIError` to a 502, so an OpenRouter outage is not a 500
+- [x] Require a session, so chat is scoped to the signed-in user's board
+- [x] Raise `ai.TIMEOUT` to 180s after measuring a 92s add-a-card call. Whole-board replacement means the model reproduces all eight cards to add one
 
 **Tests**
 
 All of these mock the OpenRouter transport; no live calls in the suite.
 
-- Backend: a question with no board change returns the reply and `board_updated: false`, and the stored board is unchanged
-- Backend: a tool call containing a valid board persists it and returns `board_updated: true`
-- Backend: an added card appears in the stored board
-- Backend: a moved card is reflected in the stored `cardIds`
-- Backend: an invalid returned board is rejected, `board_updated` is false, and the stored board is untouched
-- Backend: a missing tool call falls back to message content without erroring
-- Backend: the outgoing request contains the current board JSON and the passed history
-- Backend: `/api/chat` without a session returns 401
-- Live, manual: ask the model to add a card and confirm it lands on the real board
+- [x] Backend: a question with no board change returns the reply and `board_updated: false`, and the stored board is unchanged
+- [x] Backend: a tool call containing a valid board persists it and returns `board_updated: true`
+- [x] Backend: an added card appears in the stored board
+- [x] Backend: a moved card is reflected in the stored `cardIds`
+- [x] Backend: an invalid returned board is rejected, `board_updated` is false, and the stored board is untouched
+- [x] Backend: a board that is not an object at all is rejected the same way
+- [x] Backend: a missing tool call falls back to message content without erroring
+- [x] Backend: unparseable tool arguments fall back to message content
+- [x] Backend: a reply with no tool call and no content is a 502, not a 500
+- [x] Backend: an OpenRouter failure is a 502 carrying the reason
+- [x] Backend: the outgoing request contains the current board JSON, the passed history, and the pinned tool
+- [x] Backend: the prompt carries the current board rather than the seed, after the board has been changed
+- [x] Backend: `/api/chat` without a session returns 401
+- [x] Backend: a malformed chat body returns 422
+- [x] Live, manual: ask the model to add a card and confirm it lands on the real board
+- [x] Live, manual: ask a question and confirm the board is left untouched
 
 **Success criteria**
 
-- Every mocked scenario passes
-- One real end-to-end request to the live model successfully adds a card
-- A bad AI response can never corrupt a stored board
+- [x] Every mocked scenario passes: 57 backend, 4 deselected live
+- [x] One real end-to-end request to the live model successfully adds a card. It added "Book the venue" to Backlog, with the other eight cards intact
+- [x] A bad AI response can never corrupt a stored board, since the AI path reuses the same `BoardData` validator as `PUT /api/board`
 
 ---
 
 ## Part 10: AI chat sidebar
 
-- [ ] Build a collapsible sidebar matching the palette, with a message list, input, and send button
-- [ ] Hold conversation history in React state and send it with each request
-- [ ] Distinguish user and assistant messages visually
-- [ ] Show a thinking indicator while a request is in flight
-- [ ] Refetch the board automatically when the response has `board_updated: true`
-- [ ] Show a subtle confirmation when the AI changed the board
-- [ ] Handle chat errors inline without losing the conversation
-- [ ] Make the sidebar responsive and keep the board usable at narrow widths
-- [ ] Keyboard support: Enter sends, Shift+Enter adds a newline
-- [ ] Confirm the sidebar is reachable and operable by keyboard alone
+- [x] Build a collapsible sidebar matching the palette, with a message list, input, and send button
+- [x] Hold conversation history in React state and send it with each request
+- [x] Distinguish user and assistant messages visually
+- [x] Show a thinking indicator while a request is in flight. Part 9 measured a board change at 92 seconds on the free tier, so this has to tolerate a long wait rather than look hung. The indicator pulses and says board changes can take a minute or two
+- [x] Refetch the board automatically when the response has `board_updated: true`. `KanbanBoard` uses `setBoard` rather than `mutate`, so the AI write is never PUTted back
+- [x] Show a subtle confirmation when the AI changed the board, attached to that assistant turn
+- [x] Handle chat errors inline without losing the conversation
+- [x] Make the sidebar responsive and keep the board usable at narrow widths. Below `lg` it covers the board; at `lg` and up the board reserves `pr-[430px]`
+- [x] Keyboard support: Enter sends, Shift+Enter adds a newline
+- [x] Confirm the sidebar is reachable and operable by keyboard alone. Opening focuses the input; Close has an accessible name
 
 **Tests**
 
-- Unit: sidebar opens and closes
-- Unit: sending a message renders it and then the mocked reply
-- Unit: the thinking indicator shows while pending
-- Unit: a `board_updated: true` response triggers a board refetch
-- Unit: a `board_updated: false` response does not refetch
-- Unit: a failed request shows an error and preserves history
-- Unit: history accumulates across turns and is sent onward
-- e2e: open the sidebar, send a message, receive a reply
-- e2e with the live model: ask for a new card and watch the board update without a manual reload
-- e2e: the board stays usable with the sidebar open
+- [x] Unit: sidebar opens and closes
+- [x] Unit: sending a message renders it and then the mocked reply
+- [x] Unit: the thinking indicator shows while pending
+- [x] Unit: a `board_updated: true` response triggers a board refetch
+- [x] Unit: a `board_updated: false` response does not refetch
+- [x] Unit: a failed request shows an error and preserves history
+- [x] Unit: history accumulates across turns and is sent onward
+- [x] Unit: Enter sends, Shift+Enter inserts a newline, empty input does not send
+- [x] Unit: a 401 from chat reports unauthorized rather than an inline error
+- [x] e2e: open the sidebar, send a message, receive a reply. `/api/chat` is mocked so the default suite does not spend free-tier quota
+- [x] e2e: the board stays usable with the sidebar open
+- [x] e2e: the sidebar opens, sends, and closes from the keyboard alone
+- [x] e2e with the live model: ask for a new card and watch the board update without a manual reload. Tagged `@live`, excluded unless `LIVE_AI=1`. Took 1.3 minutes. The first draft of this test matched the user message, which already contains the card title; it now waits for the assistant turn and asserts a heading inside Backlog
 
 **Success criteria**
 
-- A user can hold a conversation and see board changes appear without reloading
-- The AI can create, edit, and move cards through chat
-- Full suite green: frontend unit, backend unit, and e2e
-- The palette is respected and no hardcoded hex values were added
+- [x] A user can hold a conversation and see board changes appear without reloading
+- [x] The AI can create, edit, and move cards through chat
+- [x] Full suite green: 57 backend, 39 frontend unit, 24 e2e. Live e2e passed separately
+- [x] The palette is respected and no hardcoded hex values were added. Chat colors go through `--primary-blue-soft` and `--secondary-purple-soft`
 
 ---
 
 ## Definition of done
 
-- [ ] `docker compose up --build` from a clean checkout yields a working app on port 8000
-- [ ] Sign in with `user` / `password`, use the board, chat with the AI, sign out
-- [ ] All state persists across container restarts
-- [ ] Start and stop scripts exist for Mac, Windows, and Linux
-- [ ] Frontend unit, backend unit, and e2e suites all pass
-- [ ] `README.md`, `docs/DATABASE.md`, and the `AGENTS.md` files are accurate
-- [ ] No secrets committed
+- [x] `docker compose up --build` from a clean checkout yields a working app on port 8000
+- [x] Sign in with `user` / `password`, use the board, chat with the AI, sign out
+- [x] All state persists across container restarts
+- [x] Start and stop scripts exist for Mac, Windows, and Linux
+- [x] Frontend unit, backend unit, and e2e suites all pass
+- [x] `README.md`, `docs/DATABASE.md`, and the `AGENTS.md` files are accurate
+- [x] No secrets committed

@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, model_validator
 
 
@@ -55,3 +57,20 @@ class BoardData(BaseModel):
             raise ValueError(f"cards in no column: {orphans}")
 
         return self
+
+
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class ChatRequest(BaseModel):
+    """Conversation history lives in frontend state, so it arrives with every turn."""
+
+    message: str
+    history: list[ChatMessage] = []
+
+
+class ChatResponse(BaseModel):
+    reply: str
+    board_updated: bool

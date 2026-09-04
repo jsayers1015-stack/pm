@@ -72,3 +72,25 @@ export const saveBoard = async (board: BoardData): Promise<void> => {
     throw new Error(`Could not save the board (${response.status})`);
   }
 };
+
+export type ChatMessage = { role: "user" | "assistant"; content: string };
+
+export type ChatReply = { reply: string; boardUpdated: boolean };
+
+export const sendChat = async (
+  message: string,
+  history: ChatMessage[]
+): Promise<ChatReply> => {
+  const response = await request("/chat", {
+    method: "POST",
+    body: JSON.stringify({ message, history }),
+  });
+  if (response.status === 401) {
+    throw new UnauthorizedError();
+  }
+  if (!response.ok) {
+    throw new Error(`The assistant could not reply (${response.status})`);
+  }
+  const data = await response.json();
+  return { reply: data.reply, boardUpdated: data.board_updated };
+};

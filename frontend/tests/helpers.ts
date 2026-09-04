@@ -28,3 +28,16 @@ export const signInWithFreshBoard = async (page: Page) => {
   await page.reload();
   await expect(page.getByRole("heading", { name: "Kanban Studio" })).toBeVisible();
 };
+
+export const mockChat = async (
+  page: Page,
+  reply = { reply: "You have eight cards.", board_updated: false }
+) => {
+  await page.route("**/api/chat", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      json: reply,
+    })
+  );
+};
