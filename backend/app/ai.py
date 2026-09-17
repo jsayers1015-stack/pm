@@ -59,8 +59,16 @@ async def chat_completion(
         raise AIError(f"OpenRouter returned {response.status_code}: {response.text}")
 
     # OpenRouter also reports upstream provider failures as a 200 with an error
-    # body and no choices, so this is a real case rather than a paranoid check.
-    choices = response.json().get("choices")
+    # body and no choices, and a proxy can put an HTML page on a 200, so each of
+    # these is a real case rather than a paranoid check.
+    try:
+        body = response.json()
+    except ValueError as exc:
+        raise AIError(f"OpenRouter returned a body that is not JSON: {response.text}") from exc
+    choices = body.get("choices") if isinstance(body, dict) else None
     if not choices:
         raise AIError(f"OpenRouter returned no choices: {response.text}")
-    return choices[0]["message"]
+    message = choices[0].get("message")
+    if not isinstance(message, dict):
+        raise AIError(f"OpenRouter returned a choice with no message: {response.text}")
+    return message

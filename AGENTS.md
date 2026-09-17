@@ -41,7 +41,7 @@ A working MVP of the frontend has been built and is already in frontend. This is
 - Blue Primary: `#209dd7` - links, key sections
 - Purple Secondary: `#753991` - submit buttons, important actions
 - Dark Navy: `#032147` - main headings
-- Gray Text: `#888888` - supporting text, labels
+- Gray Text: `#767676` - supporting text, labels (the lightest gray that meets WCAG AA contrast on white)
 
 
 

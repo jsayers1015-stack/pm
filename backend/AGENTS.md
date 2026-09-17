@@ -53,6 +53,10 @@ The whole board is one JSON document in `boards.data`, one row per user. See `do
 - `GET /api/board` returns the signed-in user's board
 - `PUT /api/board` replaces it wholesale and bumps `updated_at`
 
+`db.save_board` takes an optional `expected_updated_at` and then writes only if the stored board is still that version, returning whether it wrote. The chat route uses this with `db.get_board_and_version`; client `PUT`s stay last-write-wins.
+
+`BoardData` caps column and card titles at `TITLE_MAX` (500) and card details at `TEXT_MAX` (10,000) characters. These only stop runaway payloads; the UI sets no limit of its own.
+
 `db._ensure_board` seeds a board on first access rather than only at startup, so any user gets one, not just the seeded default. `init_db` calls it too, which keeps the documented first-run behaviour.
 
 Validation lives in the `BoardData` model validator in `schemas.py`, not in the route. That means the integrity rules apply anywhere the model is constructed, including AI output in Part 9, and a violation is a 422 with no extra route code. When changing the board shape, update `schemas.py`, `frontend/src/lib/kanban.ts`, `app/seed.py`, and `docs/DATABASE.md` together.
@@ -61,13 +65,15 @@ Validation lives in the `BoardData` model validator in `schemas.py`, not in the 
 
 `ai.chat_completion(messages, tools=None, tool_choice=None)` posts to OpenRouter and returns the first choice's raw message dict, so a caller forcing a tool call can read `tool_calls` off it.
 
-Everything that can go wrong raises `ai.AIError` with a readable message: no key, a rejected key, a 429, any other non-200, a transport failure, and a 200 carrying an error body with no `choices`. Nothing in `ai.py` maps to an HTTP status; the chat route does that.
+Everything that can go wrong raises `ai.AIError` with a readable message: no key, a rejected key, a 429, any other non-200, a transport failure, and a 200 whose body is not JSON, has no `choices`, or whose first choice has no `message`. Nothing in `ai.py` maps to an HTTP status; the chat route does that.
 
 Verified live against `nvidia/nemotron-3.5-lightning:free`: it supports `tools` and `tool_choice` including forcing a named function, but not `response_format` or `structured_outputs`. That is why the chat route gets structured output through a forced tool call.
 
 ## Chat
 
-`POST /api/chat` takes `{message, history}` and returns `{reply, board_updated}`. History is held in frontend state and sent with every turn, so there is no messages table.
+`POST /api/chat` takes `{message, history}` and returns `{reply, board_updated}`. History is held in frontend state and sent with every turn, so there is no messages table. Only the last `chat.MAX_HISTORY` (20) turns are forwarded to the model, and `message` and each history entry are capped at `TEXT_MAX` characters, so the prompt cannot grow without limit.
+
+The board is read together with its `updated_at` before the model call, and the model's board is saved only if `updated_at` still matches. A board change takes around 90 seconds and the board stays editable meanwhile, so an unconditional save would silently undo anything the user changed during the call. On a mismatch the model's board is discarded and the reply is replaced with `chat.STALE_BOARD_REPLY`, with `board_updated: false`.
 
 Structure comes from one tool, `respond_to_user`, with `tool_choice` pinned to it so every reply is a tool call. It takes a required `reply` and an optional `board`. The model is told to omit `board` unless the user asked for a change.
 

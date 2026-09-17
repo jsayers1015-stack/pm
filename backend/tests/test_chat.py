@@ -3,6 +3,8 @@ import json
 
 import httpx2
 
+from app import chat, db
+from app.schemas import TEXT_MAX
 from app.seed import SEED_BOARD
 
 
@@ -72,6 +74,23 @@ def test_a_moved_card_is_reflected_in_the_stored_card_ids(signed_in, openrouter)
     columns = {column["id"]: column["cardIds"] for column in board["columns"]}
     assert "card-1" not in columns["col-backlog"]
     assert columns["col-done"] == ["card-7", "card-8", "card-1"]
+
+
+def test_an_edit_made_during_the_call_is_not_overwritten(signed_in, openrouter):
+    renamed = copy.deepcopy(SEED_BOARD)
+    renamed["columns"][0]["title"] = "Renamed mid-call"
+
+    def user_edits_then_ai_replies(request):
+        # Stands in for a PUT /api/board landing while the model is thinking.
+        db.save_board("user", renamed)
+        return tool_response(reply="Added it.", board=board_with_new_card())
+
+    openrouter(user_edits_then_ai_replies)
+
+    response = signed_in.post("/api/chat", json={"message": "Add a card about docs"})
+
+    assert response.json() == {"reply": chat.STALE_BOARD_REPLY, "board_updated": False}
+    assert signed_in.get("/api/board").json() == renamed
 
 
 def test_an_invalid_board_is_rejected_and_nothing_is_stored(signed_in, openrouter):
@@ -158,6 +177,27 @@ def test_the_request_carries_the_board_the_history_and_the_tool(signed_in, openr
     assert rest == [*history, {"role": "user", "content": "How many cards?"}]
     assert body["tool_choice"]["function"]["name"] == "respond_to_user"
     assert body["tools"][0]["function"]["name"] == "respond_to_user"
+
+
+def test_only_the_latest_history_is_sent_to_the_model(signed_in, openrouter):
+    sent = openrouter(lambda request: tool_response(reply="ok"))
+    history = [
+        {"role": "user" if index % 2 == 0 else "assistant", "content": f"turn {index}"}
+        for index in range(chat.MAX_HISTORY + 10)
+    ]
+
+    signed_in.post("/api/chat", json={"message": "Latest", "history": history})
+
+    _, *rest = json.loads(sent["request"].content)["messages"]
+    assert rest == [*history[-chat.MAX_HISTORY:], {"role": "user", "content": "Latest"}]
+
+
+def test_an_oversized_message_returns_422(signed_in, openrouter):
+    openrouter(lambda request: tool_response(reply="never reached"))
+
+    response = signed_in.post("/api/chat", json={"message": "x" * (TEXT_MAX + 1)})
+
+    assert response.status_code == 422
 
 
 def test_the_prompt_carries_the_current_board_not_the_seed(signed_in, openrouter):

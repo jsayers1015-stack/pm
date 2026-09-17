@@ -179,7 +179,59 @@ describe("KanbanBoard", () => {
 
     expect(screen.getByText(/signed in as user/i)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /sign out/i }));
-    expect(props.onSignOut).toHaveBeenCalledOnce();
+    await waitFor(() => expect(props.onSignOut).toHaveBeenCalledOnce());
+    expect(mockedApi.saveBoard).not.toHaveBeenCalled();
+  });
+
+  it("saves a pending change before signing out", async () => {
+    const props = await renderBoard();
+    props.onSignOut.mockImplementation(() => {
+      expect(mockedApi.saveBoard).toHaveBeenCalledOnce();
+    });
+
+    await userEvent.click(
+      within(getFirstColumn()).getByRole("button", {
+        name: /delete align roadmap themes/i,
+      })
+    );
+    await userEvent.click(screen.getByRole("button", { name: /sign out/i }));
+
+    await waitFor(() => expect(props.onSignOut).toHaveBeenCalledOnce());
+    expect(lastSavedBoard().cards["card-1"]).toBeUndefined();
+  });
+
+  it("sends a pending change when the board unmounts", async () => {
+    const { unmount } = render(
+      <KanbanBoard username="user" onSignOut={vi.fn()} onUnauthorized={vi.fn()} />
+    );
+    await screen.findByRole("heading", { name: "Kanban Studio" });
+
+    await userEvent.click(
+      within(getFirstColumn()).getByRole("button", {
+        name: /delete align roadmap themes/i,
+      })
+    );
+    unmount();
+
+    expect(mockedApi.saveBoard).toHaveBeenCalledOnce();
+    expect(mockedApi.saveBoard.mock.calls[0][1]).toEqual({ keepalive: true });
+    expect(lastSavedBoard().cards["card-1"]).toBeUndefined();
+  });
+
+  it("sends a pending change when the page is hidden, and only once", async () => {
+    await renderBoard();
+
+    await userEvent.click(
+      within(getFirstColumn()).getByRole("button", {
+        name: /delete align roadmap themes/i,
+      })
+    );
+    window.dispatchEvent(new Event("pagehide"));
+
+    expect(mockedApi.saveBoard).toHaveBeenCalledOnce();
+    // The debounce timer must not send the same change again.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(mockedApi.saveBoard).toHaveBeenCalledOnce();
   });
 
   it("surfaces an error and refetches when a save fails", async () => {

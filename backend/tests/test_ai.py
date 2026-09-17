@@ -102,3 +102,17 @@ async def test_a_200_with_no_choices_is_an_error(openrouter):
 
     with pytest.raises(ai.AIError, match="no choices"):
         await ai.chat_completion([{"role": "user", "content": "hi"}])
+
+
+async def test_a_200_with_a_body_that_is_not_json_is_an_error(openrouter):
+    openrouter(lambda request: httpx2.Response(200, text="<html>Bad gateway</html>"))
+
+    with pytest.raises(ai.AIError, match="not JSON"):
+        await ai.chat_completion([{"role": "user", "content": "hi"}])
+
+
+async def test_a_choice_with_no_message_is_an_error(openrouter):
+    openrouter(lambda request: httpx2.Response(200, json={"choices": [{"finish_reason": "error"}]}))
+
+    with pytest.raises(ai.AIError, match="no message"):
+        await ai.chat_completion([{"role": "user", "content": "hi"}])

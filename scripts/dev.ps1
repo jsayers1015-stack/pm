@@ -14,7 +14,7 @@ if (-not $env:DB_PATH) {
 New-Item -ItemType Directory -Force -Path (Split-Path $env:DB_PATH) | Out-Null
 
 $backend = Start-Process -PassThru -NoNewWindow -WorkingDirectory (Join-Path $PWD "backend") `
-  -FilePath "uv" -ArgumentList "run", "--frozen", "uvicorn", "app.main:app", "--reload", "--port", "8000"
+  -FilePath "uv" -ArgumentList "run", "--frozen", "--env-file", "../.env", "uvicorn", "app.main:app", "--reload", "--port", "8000"
 
 try {
   Set-Location (Join-Path $PWD "frontend")

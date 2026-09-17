@@ -19,8 +19,22 @@ export const KanbanCard = ({ card, onEdit, onDelete }: KanbanCardProps) => {
 
   // Dragging is disabled while editing, otherwise the drag listeners swallow
   // pointer events meant for the inputs.
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: card.id, disabled: isEditing });
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: card.id, disabled: isEditing });
+
+  // Registering the card as its own activator makes the keyboard sensor ignore
+  // Enter and Space that bubble up from the Edit and Remove buttons.
+  const setRefs = (node: HTMLElement | null) => {
+    setNodeRef(node);
+    setActivatorNodeRef(node);
+  };
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -45,7 +59,7 @@ export const KanbanCard = ({ card, onEdit, onDelete }: KanbanCardProps) => {
 
   return (
     <article
-      ref={setNodeRef}
+      ref={setRefs}
       style={style}
       className={clsx(
         "rounded-2xl border border-transparent bg-white px-4 py-4 shadow-[0_12px_24px_rgba(3,33,71,0.08)]",

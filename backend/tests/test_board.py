@@ -1,6 +1,7 @@
 import json
 
 from app import config, db
+from app.schemas import TEXT_MAX, TITLE_MAX
 from app.seed import SEED_BOARD
 
 
@@ -141,6 +142,21 @@ class TestValidation:
     def test_duplicate_column_ids_are_rejected(self, signed_in):
         board = valid_board()
         board["columns"][1]["id"] = "col-a"
+        assert signed_in.put("/api/board", json=board).status_code == 422
+
+    def test_oversized_card_title_is_rejected(self, signed_in):
+        board = valid_board()
+        board["cards"]["card-1"]["title"] = "x" * (TITLE_MAX + 1)
+        assert signed_in.put("/api/board", json=board).status_code == 422
+
+    def test_oversized_card_details_are_rejected(self, signed_in):
+        board = valid_board()
+        board["cards"]["card-1"]["details"] = "x" * (TEXT_MAX + 1)
+        assert signed_in.put("/api/board", json=board).status_code == 422
+
+    def test_oversized_column_title_is_rejected(self, signed_in):
+        board = valid_board()
+        board["columns"][0]["title"] = "x" * (TITLE_MAX + 1)
         assert signed_in.put("/api/board", json=board).status_code == 422
 
     def test_rejected_put_leaves_the_stored_board_untouched(self, signed_in):

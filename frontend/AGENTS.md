@@ -4,7 +4,7 @@ NextJS Kanban board with sign in. The board is loaded from and saved to the back
 
 ## Stack
 
-- Next 16.1.6, App Router, TypeScript strict
+- Next 16.3.5, App Router, TypeScript strict
 - React 19.2.3
 - Tailwind CSS 4 via `@tailwindcss/postcss` (no `tailwind.config`; theme lives in `globals.css`)
 - `@dnd-kit/core` + `@dnd-kit/sortable` for drag and drop
@@ -99,6 +99,10 @@ The pending-save flag is what stops the effect from writing back a board it just
 
 A failed save shows a non-blocking banner and refetches, so the UI resyncs to whatever the server actually holds rather than sitting on rejected state.
 
+A change still waiting on the debounce is not dropped when the board goes away. `flushSave` sends it immediately with `fetch` `keepalive`, and runs on `pagehide`, on unmount, and before `onSignOut` (awaited there, so the save lands before the logout). The latest board is mirrored into a ref for this. The debounce timer checks the pending flag before sending, so a flushed change is never sent twice.
+
+Cards move with the keyboard as well as the pointer: `KeyboardSensor` with `sortableKeyboardCoordinates`. Focus a card, Space to pick it up, arrows to move, Space to drop. `KanbanCard` registers the card as its own activator node (`setActivatorNodeRef`), otherwise Enter or Space on its Edit and Remove buttons would bubble up and start a drag instead of pressing the button.
+
 `KanbanCard` owns its own `isEditing` state and a `draft` copy of the card. Editing passes `disabled: isEditing` to `useSortable` and stops spreading the drag listeners, otherwise the listeners swallow pointer events meant for the inputs. Discarding drops the draft without calling back up.
 
 `moveCard(columns, activeId, overId)` in `lib/kanban.ts` is pure and covers reorder-within-column, move-to-another-column, and drop-on-empty-column (appends to end). It only touches `columns`, never `cards`.
@@ -107,7 +111,7 @@ A failed save shows a non-blocking banner and refetches, so the UI resyncs to wh
 
 Palette is defined once as CSS variables in `globals.css` and referenced as `text-[var(--navy-dark)]` etc. Do not hardcode hex values in components.
 
-`--accent-yellow: #ecad0a`, `--primary-blue: #209dd7`, `--secondary-purple: #753991`, `--navy-dark: #032147`, `--gray-text: #888888`, plus `--surface`, `--surface-strong`, `--stroke`, `--shadow`, `--primary-blue-soft`, `--secondary-purple-soft`.
+`--accent-yellow: #ecad0a`, `--primary-blue: #209dd7`, `--secondary-purple: #753991`, `--navy-dark: #032147`, `--gray-text: #767676` (the lightest gray meeting WCAG AA on white), plus `--surface`, `--surface-strong`, `--stroke`, `--shadow`, `--primary-blue-soft`, `--secondary-purple-soft`.
 
 Fonts are Space Grotesk (display, via the `.font-display` class) and Manrope (body), loaded through `next/font/google` in `layout.tsx`. `.thinking` is a slow opacity pulse used by the chat waiting state.
 
@@ -131,7 +135,7 @@ Keep these stable; both test suites depend on them.
 - `aria-label="Message"` on the chat textarea, `aria-label="Close assistant"` on Close
 - `data-testid="chat-user"` / `data-testid="chat-assistant"` on each turn, `data-testid="chat-thinking"` while waiting, `data-testid="chat-error"` on a failed send, `data-testid="chat-board-updated"` on the confirmation
 
-Scripts: `npm run test:unit`, `npm run test:e2e`, `npm run test:all`. The e2e live test is tagged `@live` and excluded unless `LIVE_AI=1`.
+Scripts: `npm run typecheck`, `npm run test:unit`, `npm run test:e2e`, `npm run test:all` (all three). Vitest strips types without checking them, so `typecheck` is what catches type errors in tests; `src/test/vitest.d.ts` references `vitest/globals` to type the globals `vitest.config.ts` enables. The e2e live test is tagged `@live` and excluded unless `LIVE_AI=1`.
 
 ## Build modes
 

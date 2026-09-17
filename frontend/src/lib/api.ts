@@ -60,10 +60,15 @@ export const getBoard = async (): Promise<BoardData> => {
   return response.json();
 };
 
-export const saveBoard = async (board: BoardData): Promise<void> => {
+// keepalive lets a save started as the page closes outlive the page.
+export const saveBoard = async (
+  board: BoardData,
+  { keepalive = false } = {}
+): Promise<void> => {
   const response = await request("/board", {
     method: "PUT",
     body: JSON.stringify(board),
+    keepalive,
   });
   if (response.status === 401) {
     throw new UnauthorizedError();

@@ -1,6 +1,10 @@
 from typing import Literal
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
+
+# Well above anything a person types, so they only stop runaway payloads.
+TITLE_MAX = 500
+TEXT_MAX = 10_000
 
 
 class LoginRequest(BaseModel):
@@ -10,13 +14,13 @@ class LoginRequest(BaseModel):
 
 class Card(BaseModel):
     id: str
-    title: str
-    details: str
+    title: str = Field(max_length=TITLE_MAX)
+    details: str = Field(max_length=TEXT_MAX)
 
 
 class Column(BaseModel):
     id: str
-    title: str
+    title: str = Field(max_length=TITLE_MAX)
     cardIds: list[str]
 
 
@@ -61,13 +65,13 @@ class BoardData(BaseModel):
 
 class ChatMessage(BaseModel):
     role: Literal["user", "assistant"]
-    content: str
+    content: str = Field(max_length=TEXT_MAX)
 
 
 class ChatRequest(BaseModel):
     """Conversation history lives in frontend state, so it arrives with every turn."""
 
-    message: str
+    message: str = Field(max_length=TEXT_MAX)
     history: list[ChatMessage] = []
 
 

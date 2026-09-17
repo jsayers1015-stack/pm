@@ -5,6 +5,7 @@ import clsx from "clsx";
 import {
   DndContext,
   DragOverlay,
+  KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
@@ -12,6 +13,7 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
+import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { KanbanColumn } from "@/components/KanbanColumn";
 import { KanbanCardPreview } from "@/components/KanbanCardPreview";
 import { ChatSidebar } from "@/components/ChatSidebar";
@@ -39,12 +41,37 @@ export const KanbanBoard = ({
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const hasPendingSave = useRef(false);
+  const latestBoard = useRef<BoardData | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 6 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
     })
   );
+
+  // Sends a change still waiting on the debounce straight away. keepalive lets
+  // the request finish when this runs because the tab is closing. There is no
+  // UI left to report a failure to, so errors are dropped.
+  const flushSave = useCallback(async () => {
+    if (!hasPendingSave.current || !latestBoard.current) {
+      return;
+    }
+    hasPendingSave.current = false;
+    await saveBoard(latestBoard.current, { keepalive: true }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const handlePageHide = () => void flushSave();
+    window.addEventListener("pagehide", handlePageHide);
+    return () => {
+      window.removeEventListener("pagehide", handlePageHide);
+      // Unmounting, e.g. on a session expiry, cancels the debounce timer.
+      void flushSave();
+    };
+  }, [flushSave]);
 
   useEffect(() => {
     getBoard()
@@ -59,11 +86,16 @@ export const KanbanBoard = ({
   }, [onUnauthorized]);
 
   useEffect(() => {
+    latestBoard.current = board;
     if (!board || !hasPendingSave.current) {
       return;
     }
 
     const timer = setTimeout(async () => {
+      // flushSave may already have sent this change.
+      if (!hasPendingSave.current) {
+        return;
+      }
       hasPendingSave.current = false;
       try {
         await saveBoard(board);
@@ -98,6 +130,12 @@ export const KanbanBoard = ({
       }
     }
   }, [onUnauthorized]);
+
+  // Save first, or the logout would land before the change and it would 401.
+  const handleSignOut = async () => {
+    await flushSave();
+    onSignOut();
+  };
 
   // Applies the change locally straight away, then lets the effect above persist
   // it. The UI never waits for the server.
@@ -243,7 +281,7 @@ export const KanbanBoard = ({
                 </span>
                 <button
                   type="button"
-                  onClick={onSignOut}
+                  onClick={handleSignOut}
                   className="rounded-full border border-[var(--stroke)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--navy-dark)] transition hover:border-[var(--primary-blue)] hover:text-[var(--primary-blue)]"
                 >
                   Sign out

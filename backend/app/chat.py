@@ -75,12 +75,22 @@ def _parse(message: dict) -> tuple[str, dict | None]:
     raise ai.AIError("The model returned neither a usable tool call nor any content")
 
 
+# Only the latest turns go to the model, so a long conversation cannot grow the
+# prompt without limit. Enforced here so no client can bypass it.
+MAX_HISTORY = 20
+
+STALE_BOARD_REPLY = (
+    "The board changed while I was working, so I did not apply my change. "
+    "Ask again and I will work from the current board."
+)
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat(payload: ChatRequest, username: str = Depends(current_user)):
-    board = db.get_board(username)
+    board, version = db.get_board_and_version(username)
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT + json.dumps(board)},
-        *(message.model_dump() for message in payload.history),
+        *(message.model_dump() for message in payload.history[-MAX_HISTORY:]),
         {"role": "user", "content": payload.message},
     ]
 
@@ -99,5 +109,8 @@ async def chat(payload: ChatRequest, username: str = Depends(current_user)):
         # A bad board is never stored. The user still gets the reply.
         return ChatResponse(reply=reply, board_updated=False)
 
-    db.save_board(username, validated.model_dump())
+    # The model's board was built from the snapshot read above. Writing it over
+    # an edit the user made during the call would silently undo that edit.
+    if not db.save_board(username, validated.model_dump(), expected_updated_at=version):
+        return ChatResponse(reply=STALE_BOARD_REPLY, board_updated=False)
     return ChatResponse(reply=reply, board_updated=True)

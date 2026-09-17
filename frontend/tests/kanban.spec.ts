@@ -73,6 +73,35 @@ test("moves a card between columns", async ({ page }) => {
   ).toBeVisible();
 });
 
+test("moves a card with the keyboard", async ({ page }) => {
+  // dnd-kit only listens for arrow keys once the drag has started, so each step
+  // waits for its screen reader announcement before the next key.
+  const announcement = page.locator('[id^="DndLiveRegion"]');
+
+  await page.getByTestId("card-card-1").focus();
+  await page.keyboard.press("Space");
+  await expect(announcement).toHaveText(/moved over droppable area card-1\./);
+  await page.keyboard.press("ArrowRight");
+  await expect(announcement).toHaveText(/moved over droppable area card-3\./);
+
+  const saved = waitForBoardSave(page);
+  await page.keyboard.press("Space");
+  await saved;
+
+  await page.reload();
+  await expect(
+    page.getByTestId("column-col-discovery").getByTestId("card-card-1")
+  ).toBeVisible();
+});
+
+// Enter on a button inside a card must press the button, not pick the card up.
+test("uses a card's buttons from the keyboard", async ({ page }) => {
+  const card = page.getByTestId("card-card-1");
+  await card.getByRole("button", { name: /edit align roadmap themes/i }).focus();
+  await page.keyboard.press("Enter");
+  await expect(card.getByLabel("Edit title")).toBeVisible();
+});
+
 // Guards against the edit form's inputs permanently stealing the drag listeners.
 test("still drags a card after editing it", async ({ page }) => {
   const card = page.getByTestId("card-card-1");

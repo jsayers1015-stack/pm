@@ -18,7 +18,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-(cd backend && uv run --frozen uvicorn app.main:app --reload --port 8000) &
+(cd backend && uv run --frozen --env-file ../.env uvicorn app.main:app --reload --port 8000) &
 backend_pid=$!
 
 cd frontend

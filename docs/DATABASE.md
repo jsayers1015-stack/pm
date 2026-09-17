@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS boards (
 | `users.password_hash` | `salt$hash`, PBKDF2-SHA256 at 200k rounds with a per-user hex salt |
 | `boards.user_id` | `UNIQUE`, which enforces one board per user. Dropping the constraint is all that is needed to allow several |
 | `boards.data` | The `BoardData` JSON document, serialized as text |
-| `boards.updated_at` | ISO 8601 UTC timestamp, rewritten on every save |
+| `boards.updated_at` | ISO 8601 UTC timestamp, rewritten on every save. Doubles as a version: the AI chat saves with `WHERE updated_at = ?` so it cannot overwrite an edit made while the model was working |
 
 `boards.user_id` is `UNIQUE` rather than a plain foreign key on purpose: it makes the one-board-per-user limit a database guarantee instead of an assumption in application code.
 
@@ -99,6 +99,8 @@ Validated on every write in Part 6, because a bad board from the AI or a buggy c
 - Column ids are unique
 
 Pydantic covers the types and required fields; these cross-references need explicit checks.
+
+Pydantic also caps lengths: column and card titles at 500 characters, card details at 10,000.
 
 ### Columns are fixed
 

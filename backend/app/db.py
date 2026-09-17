@@ -106,16 +106,36 @@ def get_board(username: str) -> dict:
         return json.loads(_ensure_board(conn, user["id"]))
 
 
-def save_board(username: str, board: dict) -> None:
+def get_board_and_version(username: str) -> tuple[dict, str]:
+    """The board and its updated_at, read together so the pair is consistent.
+
+    Pass the version back to save_board to write only if nothing changed since.
+    """
     with connect() as conn:
         user = conn.execute(
             "SELECT id FROM users WHERE username = ?", (username,)
         ).fetchone()
         _ensure_board(conn, user["id"])
-        conn.execute(
-            "UPDATE boards SET data = ?, updated_at = ? WHERE user_id = ?",
-            (json.dumps(board), _now(), user["id"]),
-        )
+        row = conn.execute(
+            "SELECT data, updated_at FROM boards WHERE user_id = ?", (user["id"],)
+        ).fetchone()
+        return json.loads(row["data"]), row["updated_at"]
+
+
+def save_board(username: str, board: dict, expected_updated_at: str | None = None) -> bool:
+    """Replace the board. With expected_updated_at, only if the stored board is
+    still that version. Returns whether the board was written."""
+    with connect() as conn:
+        user = conn.execute(
+            "SELECT id FROM users WHERE username = ?", (username,)
+        ).fetchone()
+        _ensure_board(conn, user["id"])
+        sql = "UPDATE boards SET data = ?, updated_at = ? WHERE user_id = ?"
+        params = [json.dumps(board), _now(), user["id"]]
+        if expected_updated_at is not None:
+            sql += " AND updated_at = ?"
+            params.append(expected_updated_at)
+        return conn.execute(sql, params).rowcount == 1
 
 
 def board_updated_at(username: str) -> str:
